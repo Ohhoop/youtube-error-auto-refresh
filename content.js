@@ -1,8 +1,6 @@
 (() => {
   const TAG = '[YT-AutoRefresh]';
   const MAX_REFRESH = 3;
-  const RELOAD_COOLDOWN_MS = 20000;
-  let reloadTriggered = false;
   const logBuffer = [];
 
   const log = (msg, data) => {
@@ -38,94 +36,11 @@
     return true;
   };
 
-  const extractJsonObject = (text, marker) => {
-    const idx = text.indexOf(marker);
-    if (idx === -1) return null;
-    const start = text.indexOf('{', idx);
-    if (start === -1) return null;
-    let depth = 0;
-    let inString = false;
-    let escape = false;
-    for (let i = start; i < text.length; i++) {
-      const c = text[i];
-      if (escape) { escape = false; continue; }
-      if (c === '\\' && inString) { escape = true; continue; }
-      if (c === '"') { inString = !inString; continue; }
-      if (inString) continue;
-      if (c === '{') depth++;
-      else if (c === '}') {
-        depth--;
-        if (depth === 0) return text.substring(start, i + 1);
-      }
-    }
-    return null;
-  };
+  let reloadTriggered = false;
 
-  const fetchFreshPlayerResponse = async (videoId) => {
-    const url = `/watch?v=${encodeURIComponent(videoId)}`;
-    const response = await fetch(url, { credentials: 'include' });
-    if (!response.ok) {
-      log('prefetch failed', { status: response.status, statusText: response.statusText });
-      return null;
-    }
-    const html = await response.text();
-    const jsonStr = extractJsonObject(html, 'ytInitialPlayerResponse');
-    if (!jsonStr) { log('prefetch: no ytInitialPlayerResponse marker found'); return null; }
-    try {
-      const parsed = JSON.parse(jsonStr);
-      const status = parsed.playabilityStatus && parsed.playabilityStatus.status;
-      const sanitized = stripAds(parsed);
-      log('prefetch ok', {
-        status,
-        hasStreaming: !!sanitized.streamingData,
-        stripped: sanitized._stripped
-      });
-      delete sanitized._stripped;
-      return sanitized;
-    } catch (e) {
-      log('prefetch parse failed', { error: String(e) });
-      return null;
-    }
-  };
-
-  const stripAds = (config) => {
-    const stripped = [];
-    if (config.adPlacements !== undefined) {
-      delete config.adPlacements;
-      stripped.push('adPlacements:deleted');
-    }
-    if (Array.isArray(config.playerAds) && config.playerAds.length > 0) {
-      const original = config.playerAds.length;
-      config.playerAds = [];
-      stripped.push(`playerAds:emptied(was ${original})`);
-    }
-    config._stripped = stripped;
-    return config;
-  };
-
-  window.addEventListener('message', (e) => {
-    if (e.source !== window || e.origin !== location.origin) return;
-    if (!e.data) return;
-    if (e.data.type === 'yt-autorefresh-strategy') {
-      log('strategy', e.data);
-    } else if (e.data.type === 'yt-autorefresh-success') {
-      log('reload succeeded', e.data);
-    } else if (e.data.type === 'yt-autorefresh-all-failed') {
-      log('all strategies failed, giving up (no page reload)', e.data);
-    } else if (e.data.type === 'yt-autorefresh-skip-debug') {
-      log('skip candidates found', e.data);
-    } else if (e.data.type === 'yt-autorefresh-click-debug') {
-      log('player click captured', e.data);
-    } else if (e.data.type === 'yt-autorefresh-content-started') {
-      flushLogs();
-    } else if (e.data.type === 'yt-autorefresh-need-reload') {
-      log('reload requested by main world', e.data);
-      triggerReload(e.data.reason || 'main-world-request');
-    }
-  });
-
-  const triggerReload = async (reason) => {
+  const triggerReload = async () => {
     if (reloadTriggered) return;
+    if (!errorVisible()) return;
 
     const videoId = getVideoId();
     if (!videoId) return;
@@ -133,40 +48,28 @@
     const key = 'yt-refresh-' + videoId;
     const count = parseInt(sessionStorage.getItem(key) || '0', 10);
     if (count >= MAX_REFRESH) {
-      log('skip: max reached', { videoId, count, reason });
+      log('skip: max reached', { videoId, count });
+      await flushLogs();
       return;
     }
 
     reloadTriggered = true;
     sessionStorage.setItem(key, String(count + 1));
-    log('triggering reload', { videoId, attempt: count + 1, reason });
+    log('error detected, page reload (bypassCache)', { videoId, attempt: count + 1 });
 
-    let freshConfig = null;
+    await flushLogs();
+
     try {
-      freshConfig = await fetchFreshPlayerResponse(videoId);
+      await chrome.runtime.sendMessage({ type: 'flush-and-reload' });
     } catch (e) {
-      log('prefetch threw', { error: String(e) });
+      location.reload();
     }
-
-    window.postMessage({
-      type: 'yt-autorefresh-reload',
-      videoId,
-      freshConfig
-    }, location.origin);
-    setTimeout(() => { reloadTriggered = false; }, RELOAD_COOLDOWN_MS);
   };
 
-  const check = async () => {
-    if (reloadTriggered) return;
-    if (!errorVisible()) return;
-    await triggerReload('error-detected');
-  };
-
-  new MutationObserver(check).observe(document.body, {
+  new MutationObserver(triggerReload).observe(document.body || document.documentElement, {
     childList: true,
-    subtree: true,
-    characterData: true
+    subtree: true
   });
 
-  check();
+  triggerReload();
 })();

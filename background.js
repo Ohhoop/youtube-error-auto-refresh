@@ -1,12 +1,6 @@
 const FILENAME = 'yt-autorefresh.log';
 const LOG_KEY = 'logs';
 
-const YT_ORIGINS = [
-  'https://www.youtube.com',
-  'https://m.youtube.com',
-  'https://youtube.com'
-];
-
 const WATCH_URL_PATTERNS = [
   '*://*.youtube.com/*',
   '*://*.googlevideo.com/*',
@@ -59,9 +53,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       .catch((e) => sendResponse({ ok: false, error: String(e) }));
     return true;
   }
-  if (msg && msg.type === 'flush-yt-data') {
-    flushYtData()
-      .then((info) => sendResponse({ ok: true, info }))
+  if (msg && msg.type === 'flush-and-reload') {
+    const tabId = sender.tab && sender.tab.id;
+    reloadTab(tabId)
+      .then(() => sendResponse({ ok: true }))
       .catch((e) => sendResponse({ ok: false, error: String(e) }));
     return true;
   }
@@ -90,14 +85,7 @@ const writeFile = async (logs) => {
   });
 };
 
-const flushYtData = async () => {
-  const dataTypes = {
-    cache: true,
-    cacheStorage: true,
-    serviceWorkers: true,
-    localStorage: true,
-    indexedDB: true
-  };
-  await chrome.browsingData.remove({ origins: YT_ORIGINS }, dataTypes);
-  return { origins: YT_ORIGINS, dataTypes: Object.keys(dataTypes) };
+const reloadTab = async (tabId) => {
+  if (!tabId) throw new Error('no tab id');
+  await chrome.tabs.reload(tabId, { bypassCache: true });
 };
