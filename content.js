@@ -73,6 +73,7 @@
     reloadTriggered = true;
     sessionStorage.setItem(key, String(count + 1));
     log('error detected', { videoId, attempt: count + 1 });
+    await flushLogs();
 
     try {
       const res = await chrome.runtime.sendMessage({ type: 'flush-yt-data' });
