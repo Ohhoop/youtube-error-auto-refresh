@@ -237,6 +237,12 @@
     return true;
   };
 
+  const AD_DURATION_MAX = 90;
+
+  const isAdDuration = (video) => {
+    return !isNaN(video.duration) && video.duration > 0 && video.duration < AD_DURATION_MAX;
+  };
+
   let lastForceEndAt = 0;
   const forceEndAd = (video) => {
     const now = Date.now();
@@ -255,7 +261,7 @@
         }
       }
     }
-    if (!isNaN(video.duration) && video.duration > 0) {
+    if (isAdDuration(video)) {
       try { video.currentTime = video.duration; } catch (e) {}
       try { video.dispatchEvent(new Event('ended', { bubbles: true })); } catch (e) {}
     }
@@ -271,7 +277,7 @@
     const adShowing = playerEl.classList.contains('ad-showing') || playerEl.classList.contains('ad-interrupting');
 
     if (adShowing) {
-      if (!isNaN(video.duration) && video.duration > 0) {
+      if (isAdDuration(video)) {
         if (video.currentTime < video.duration - 0.5) {
           try { video.currentTime = video.duration - 0.05; } catch (e) {}
         } else {

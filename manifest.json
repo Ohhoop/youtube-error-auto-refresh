@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "YouTube Auto-Refresh on Error",
-  "version": "1.0.17",
+  "version": "1.0.18",
   "description": "Reloads the YouTube video when the player shows a playback error. Tries multiple strategies, falls back to page reload. Capped at 3 attempts per video.",
   "permissions": ["downloads", "storage", "browsingData", "webRequest"],
   "host_permissions": [
