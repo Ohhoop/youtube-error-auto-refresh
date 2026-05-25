@@ -1,9 +1,11 @@
 (() => {
   const TAG = '[YT-AutoRefresh]';
   const MAX_REFRESH = 3;
+  const RELOAD_COOLDOWN_MS = 3000;
 
   let mutationCount = 0;
   let loggedFirstMutation = false;
+  let reloadTriggered = false;
 
   const log = (msg, data) => {
     const time = new Date().toISOString();
@@ -31,7 +33,9 @@
     });
   };
 
-  const check = (source) => {
+  const check = () => {
+    if (reloadTriggered) return;
+
     const reason = document.querySelector('.ytp-error-content-wrap-reason');
     if (!reason) return;
 
@@ -41,7 +45,7 @@
     const overlay = reason.closest('.ytp-error');
     if (overlay && getComputedStyle(overlay).display === 'none') return;
 
-    log('error detected', { source, text: text.substring(0, 200) });
+    log('error detected', { text: text.substring(0, 200) });
 
     const videoId = getVideoId();
     if (!videoId) { log('skip: no video id'); return; }
@@ -50,10 +54,18 @@
     const count = parseInt(sessionStorage.getItem(key) || '0', 10);
     if (count >= MAX_REFRESH) { log('skip: max reached', { videoId, count }); return; }
 
+    reloadTriggered = true;
     sessionStorage.setItem(key, String(count + 1));
-    log('reloading', { videoId, attempt: count + 1 });
-    location.reload();
+    log('reloading video', { videoId, attempt: count + 1 });
+    window.postMessage({ type: 'yt-autorefresh-reload', videoId }, location.origin);
+    setTimeout(() => { reloadTriggered = false; }, RELOAD_COOLDOWN_MS);
   };
+
+  window.addEventListener('message', (e) => {
+    if (e.source !== window || e.origin !== location.origin) return;
+    if (!e.data || e.data.type !== 'yt-autorefresh-result') return;
+    log('reload result', e.data);
+  });
 
   const observer = new MutationObserver(() => {
     mutationCount++;
@@ -61,7 +73,7 @@
       loggedFirstMutation = true;
       log('first mutation observed');
     }
-    check('mutation');
+    check();
   });
   observer.observe(document.body, {
     childList: true,
@@ -74,5 +86,5 @@
   setTimeout(() => snapshot('snapshot 15s'), 15000);
   setTimeout(() => snapshot('snapshot 30s'), 30000);
 
-  check('initial');
+  check();
 })();
