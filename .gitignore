@@ -1,4 +1,6 @@
 *.zip
 *.xpi
+*.crx
+*.pem
 .DS_Store
 Thumbs.db
