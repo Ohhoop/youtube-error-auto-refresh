@@ -164,13 +164,20 @@
     '.ytp-ad-skip-button-container button'
   ];
 
+  let lastSkipClickAt = 0;
+  const SKIP_CLICK_COOLDOWN_MS = 800;
+
   const clickAnySkipButton = () => {
+    const now = Date.now();
+    if (now - lastSkipClickAt < SKIP_CLICK_COOLDOWN_MS) return false;
+
     const allSelectors = skipSelectors.concat(extraSkipSelectors);
     for (const sel of allSelectors) {
       let matches;
       try { matches = document.querySelectorAll(sel); } catch (e) { continue; }
       for (const btn of matches) {
         if (isElementVisible(btn)) {
+          lastSkipClickAt = now;
           realisticClick(btn);
           return true;
         }
@@ -183,6 +190,7 @@
       const label = (btn.getAttribute('aria-label') || '').trim().toLowerCase();
       const text = (btn.textContent || '').trim().toLowerCase();
       if (label === 'skip' || text === 'skip' || label.startsWith('skip ad') || text.startsWith('skip ad') || label.startsWith('skip ')) {
+        lastSkipClickAt = now;
         realisticClick(btn);
         return true;
       }
@@ -191,7 +199,28 @@
     return false;
   };
 
+  const dismissPostAdInterstitial = () => {
+    const interstitial = document.querySelector(
+      '.ytp-video-interstitial-buttoned-centered-layout, .video-ads.ytp-ad-module > div'
+    );
+    if (!interstitial) return false;
+    try { interstitial.remove(); } catch (e) {}
+    const video = document.querySelector('video.html5-main-video');
+    if (video) {
+      try { video.play().catch(() => {}); } catch (e) {}
+    }
+    return true;
+  };
+
+  let lastForceEndAt = 0;
   const forceEndAd = (video) => {
+    const now = Date.now();
+    if (now - lastForceEndAt < 1000) {
+      dismissPostAdInterstitial();
+      return;
+    }
+    lastForceEndAt = now;
+    dismissPostAdInterstitial();
     const player = getPlayer();
     if (player) {
       const methods = ['cancelAdvertisement', 'skipAd', 'skipAdvertisement'];
