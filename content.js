@@ -38,7 +38,7 @@
 
   let reloadTriggered = false;
 
-  const triggerReload = async () => {
+  const triggerReload = () => {
     if (reloadTriggered) return;
     if (!errorVisible()) return;
 
@@ -49,7 +49,7 @@
     const count = parseInt(sessionStorage.getItem(key) || '0', 10);
     if (count >= MAX_REFRESH) {
       log('skip: max reached', { videoId, count });
-      await flushLogs();
+      flushLogs();
       return;
     }
 
@@ -57,10 +57,9 @@
     sessionStorage.setItem(key, String(count + 1));
     log('error detected, page reload (bypassCache)', { videoId, attempt: count + 1 });
 
-    await flushLogs();
-
+    flushLogs();
     try {
-      await chrome.runtime.sendMessage({ type: 'flush-and-reload' });
+      chrome.runtime.sendMessage({ type: 'flush-and-reload' }).catch(() => location.reload());
     } catch (e) {
       location.reload();
     }
