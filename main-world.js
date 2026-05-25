@@ -183,13 +183,11 @@
     for (const sel of allSelectors) {
       let matches;
       try { matches = document.querySelectorAll(sel); } catch (e) { continue; }
-      for (const btn of matches) {
-        if (isElementVisible(btn)) {
-          lastSkipClickAt = now;
-          realisticClick(btn);
-          return true;
-        }
-      }
+      if (matches.length === 0) continue;
+      const btn = matches[0];
+      lastSkipClickAt = now;
+      realisticClick(btn);
+      return true;
     }
 
     const candidates = document.querySelectorAll('button, [role="button"]');
