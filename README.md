@@ -8,12 +8,14 @@ A content script watches the YouTube DOM with a `MutationObserver`. When the `.y
 
 ## Install (Opera GX / Chrome / Edge)
 
-1. Download or clone this repository.
+Direct download: [youtube-error-auto-refresh-1.0.23.crx](https://github.com/Ohhoop/youtube-error-auto-refresh/releases/download/v1.0.23/youtube-error-auto-refresh-1.0.23.crx)
+
+1. Download the `.crx` file from the link above.
 2. Open `opera://extensions` (or `chrome://extensions`).
 3. Enable Developer Mode.
-4. Click "Load unpacked" and select the project folder.
+4. Drag and drop the `.crx` file into the page.
 
-To install from the packaged `.zip`, unzip it first, then follow the same steps.
+Alternatively, load the unpacked source: clone the repo, then click "Load unpacked" and select the `Unpacked` folder.
 
 ## Configuration
 
