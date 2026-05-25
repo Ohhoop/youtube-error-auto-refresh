@@ -1,72 +1,97 @@
 (() => {
-  const post = (data) => window.postMessage(
-    Object.assign({ type: 'yt-autorefresh-result' }, data),
+  const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  const post = (type, data) => window.postMessage(
+    Object.assign({ type }, data || {}),
     location.origin
   );
 
-  const delay = (ms) => new Promise((r) => setTimeout(r, ms));
-
-  const captureState = (label) => {
-    const player = document.getElementById('movie_player');
-    if (!player) return { label, hasPlayer: false };
-
+  const errorVisible = () => {
     const reason = document.querySelector('.ytp-error-content-wrap-reason');
-    const errorEl = document.querySelector('.ytp-error');
-    const video = document.querySelector('video.html5-main-video');
+    if (!reason) return false;
+    const text = (reason.textContent || '').trim();
+    if (!text) return false;
+    const overlay = reason.closest('.ytp-error');
+    if (overlay && getComputedStyle(overlay).display === 'none') return false;
+    return true;
+  };
 
+  const getPlayer = () => document.getElementById('movie_player');
+  const getVideoId = () => new URLSearchParams(location.search).get('v');
+
+  const playerState = () => {
+    const p = getPlayer();
+    if (!p) return null;
     return {
-      label,
-      playerState: typeof player.getPlayerState === 'function' ? player.getPlayerState() : null,
-      currentTime: typeof player.getCurrentTime === 'function' ? player.getCurrentTime() : null,
-      videoId: typeof player.getVideoData === 'function' ? (player.getVideoData() || {}).video_id : null,
-      errorVisible: !!(reason && (reason.textContent || '').trim()),
-      errorDisplay: errorEl ? getComputedStyle(errorEl).display : null,
-      videoPaused: video ? video.paused : null,
-      videoReadyState: video ? video.readyState : null,
-      videoError: video && video.error ? { code: video.error.code, message: video.error.message } : null
+      state: typeof p.getPlayerState === 'function' ? p.getPlayerState() : null,
+      readyState: (document.querySelector('video.html5-main-video') || {}).readyState
     };
   };
+
+  const strategies = [
+    {
+      name: 'yt-navigate',
+      run: () => {
+        const videoId = getVideoId();
+        const detail = { endpoint: { watchEndpoint: { videoId } } };
+        document.dispatchEvent(new CustomEvent('yt-navigate', { detail, bubbles: true, composed: true }));
+      }
+    },
+    {
+      name: 'stopVideo+loadVideoByUrl',
+      run: () => {
+        const player = getPlayer();
+        const videoId = getVideoId();
+        if (typeof player.stopVideo === 'function') player.stopVideo();
+        if (typeof player.loadVideoByUrl === 'function') {
+          player.loadVideoByUrl({
+            mediaContentUrl: `https://www.youtube.com/v/${videoId}`,
+            startSeconds: 0
+          });
+        }
+      }
+    },
+    {
+      name: 'stopVideo+cueVideoById+playVideo',
+      run: async () => {
+        const player = getPlayer();
+        const videoId = getVideoId();
+        if (typeof player.stopVideo === 'function') player.stopVideo();
+        await delay(200);
+        if (typeof player.cueVideoById === 'function') player.cueVideoById(videoId);
+        await delay(300);
+        if (typeof player.playVideo === 'function') player.playVideo();
+      }
+    }
+  ];
 
   window.addEventListener('message', async (e) => {
     if (e.source !== window || e.origin !== location.origin) return;
     if (!e.data || e.data.type !== 'yt-autorefresh-reload') return;
 
-    const player = document.getElementById('movie_player');
-    if (!player || typeof player.loadVideoById !== 'function') {
-      post({ success: false, reason: 'no-player-api', fallback: 'page-reload' });
-      location.reload();
+    const player = getPlayer();
+    if (!player) {
+      post('yt-autorefresh-all-failed', { reason: 'no-player' });
       return;
     }
 
-    const stateBefore = captureState('before');
-
-    try {
-      if (typeof player.stopVideo === 'function') {
-        player.stopVideo();
+    for (const s of strategies) {
+      post('yt-autorefresh-strategy', { name: s.name, phase: 'try', state: playerState() });
+      try {
+        await s.run();
+      } catch (err) {
+        post('yt-autorefresh-strategy', { name: s.name, phase: 'threw', error: String(err) });
+        continue;
       }
-      await delay(200);
-      const stateAfterStop = captureState('afterStop');
-
-      const data = typeof player.getVideoData === 'function' ? player.getVideoData() : {};
-      const videoId = (data && data.video_id) || e.data.videoId;
-      player.loadVideoById({ videoId, startSeconds: 0 });
-
-      await delay(500);
-      const stateAfterLoad500 = captureState('afterLoad+500ms');
-
-      await delay(2000);
-      const stateAfterLoad2500 = captureState('afterLoad+2500ms');
-
-      post({
-        success: true,
-        videoId,
-        stateBefore,
-        stateAfterStop,
-        stateAfterLoad500,
-        stateAfterLoad2500
-      });
-    } catch (err) {
-      post({ success: false, reason: String(err), stateBefore });
+      await delay(2500);
+      const stillBroken = errorVisible();
+      post('yt-autorefresh-strategy', { name: s.name, phase: 'result', errorVisible: stillBroken, state: playerState() });
+      if (!stillBroken) {
+        post('yt-autorefresh-success', { strategy: s.name });
+        return;
+      }
     }
+
+    post('yt-autorefresh-all-failed', { reason: 'all-strategies-failed' });
   });
 })();

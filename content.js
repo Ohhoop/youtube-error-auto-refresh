@@ -1,20 +1,31 @@
 (() => {
   const TAG = '[YT-AutoRefresh]';
   const MAX_REFRESH = 3;
-  const RELOAD_COOLDOWN_MS = 5000;
+  const RELOAD_COOLDOWN_MS = 12000;
+  const LOG_FLUSH_INTERVAL_MS = 30000;
 
-  let mutationCount = 0;
-  let loggedFirstMutation = false;
   let reloadTriggered = false;
+  const logBuffer = [];
 
   const log = (msg, data) => {
-    const time = new Date().toISOString();
     const line = data !== undefined
-      ? `${time} ${msg} ${JSON.stringify(data)}`
-      : `${time} ${msg}`;
+      ? `${new Date().toISOString()} ${msg} ${JSON.stringify(data)}`
+      : `${new Date().toISOString()} ${msg}`;
     console.log(TAG, msg, data === undefined ? '' : data);
-    try { chrome.runtime.sendMessage({ type: 'log', line }); } catch (e) {}
+    logBuffer.push(line);
   };
+
+  const flushLogs = async () => {
+    if (logBuffer.length === 0) return;
+    const text = logBuffer.join('\n') + '\n';
+    logBuffer.length = 0;
+    try {
+      await chrome.runtime.sendMessage({ type: 'append-and-write', text });
+    } catch (e) {}
+  };
+
+  setInterval(flushLogs, LOG_FLUSH_INTERVAL_MS);
+  window.addEventListener('beforeunload', () => { flushLogs(); });
 
   log('content script loaded', { url: location.href });
 
@@ -30,70 +41,55 @@
     return true;
   };
 
-  const snapshot = (label) => {
-    const reason = document.querySelector('.ytp-error-content-wrap-reason');
-    const errorEl = document.querySelector('.ytp-error');
-    log(label, {
-      url: location.href,
-      mutationCount,
-      hasReason: !!reason,
-      reasonText: reason ? (reason.textContent || '').trim().substring(0, 150) : null,
-      hasErrorEl: !!errorEl,
-      errorElDisplay: errorEl ? getComputedStyle(errorEl).display : null
-    });
-  };
+  window.addEventListener('message', (e) => {
+    if (e.source !== window || e.origin !== location.origin) return;
+    if (!e.data) return;
+    if (e.data.type === 'yt-autorefresh-strategy') {
+      log('strategy', e.data);
+    } else if (e.data.type === 'yt-autorefresh-success') {
+      log('reload succeeded', e.data);
+      flushLogs();
+    } else if (e.data.type === 'yt-autorefresh-all-failed') {
+      log('all strategies failed, page reload', e.data);
+      flushLogs().finally(() => location.reload());
+    }
+  });
 
   const check = async () => {
     if (reloadTriggered) return;
     if (!errorVisible()) return;
 
     const videoId = getVideoId();
-    if (!videoId) { log('skip: no video id'); return; }
+    if (!videoId) return;
 
     const key = 'yt-refresh-' + videoId;
     const count = parseInt(sessionStorage.getItem(key) || '0', 10);
-    if (count >= MAX_REFRESH) { log('skip: max reached', { videoId, count }); return; }
+    if (count >= MAX_REFRESH) {
+      log('skip: max reached', { videoId, count });
+      flushLogs();
+      return;
+    }
 
     reloadTriggered = true;
     sessionStorage.setItem(key, String(count + 1));
-    log('error detected, starting reload sequence', { videoId, attempt: count + 1 });
+    log('error detected', { videoId, attempt: count + 1 });
 
     try {
-      const res = await chrome.runtime.sendMessage({ type: 'flush-yt-cache' });
-      log('cache flush result', res);
+      const res = await chrome.runtime.sendMessage({ type: 'flush-yt-data' });
+      log('storage flush', res);
     } catch (e) {
-      log('cache flush failed', { error: String(e) });
+      log('storage flush failed', { error: String(e) });
     }
 
-    log('posting video reload to main world', { videoId });
     window.postMessage({ type: 'yt-autorefresh-reload', videoId }, location.origin);
     setTimeout(() => { reloadTriggered = false; }, RELOAD_COOLDOWN_MS);
   };
 
-  window.addEventListener('message', (e) => {
-    if (e.source !== window || e.origin !== location.origin) return;
-    if (!e.data || e.data.type !== 'yt-autorefresh-result') return;
-    log('reload result', e.data);
-  });
-
-  const observer = new MutationObserver(() => {
-    mutationCount++;
-    if (!loggedFirstMutation) {
-      loggedFirstMutation = true;
-      log('first mutation observed');
-    }
-    check();
-  });
-  observer.observe(document.body, {
+  new MutationObserver(check).observe(document.body, {
     childList: true,
     subtree: true,
     characterData: true
   });
-  log('observer attached');
-
-  setTimeout(() => snapshot('snapshot 5s'), 5000);
-  setTimeout(() => snapshot('snapshot 15s'), 15000);
-  setTimeout(() => snapshot('snapshot 30s'), 30000);
 
   check();
 })();
