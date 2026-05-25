@@ -2,17 +2,41 @@ const FILENAME = 'yt-autorefresh.log';
 const LOG_KEY = 'logs';
 const WRITE_DEBOUNCE_MS = 2000;
 
+const YT_ORIGINS = [
+  'https://www.youtube.com',
+  'https://m.youtube.com',
+  'https://youtube.com'
+];
+
 let writeTimer = null;
 
 const clearLogs = () => chrome.storage.local.set({ [LOG_KEY]: '' });
 chrome.runtime.onInstalled.addListener(clearLogs);
 chrome.runtime.onStartup.addListener(clearLogs);
 
-chrome.runtime.onMessage.addListener((msg) => {
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.type === 'log' && typeof msg.line === 'string') {
     appendLog(msg.line);
+    return false;
   }
+  if (msg && msg.type === 'flush-yt-cache') {
+    flushYtCache()
+      .then((info) => sendResponse({ ok: true, info }))
+      .catch((e) => sendResponse({ ok: false, error: String(e) }));
+    return true;
+  }
+  return false;
 });
+
+const flushYtCache = async () => {
+  const dataTypes = {
+    cache: true,
+    cacheStorage: true,
+    serviceWorkers: true
+  };
+  await chrome.browsingData.remove({ origins: YT_ORIGINS }, dataTypes);
+  return { origins: YT_ORIGINS, dataTypes: Object.keys(dataTypes) };
+};
 
 const appendLog = async (line) => {
   const stored = await chrome.storage.local.get(LOG_KEY);

@@ -1,7 +1,7 @@
 (() => {
   const TAG = '[YT-AutoRefresh]';
   const MAX_REFRESH = 3;
-  const RELOAD_COOLDOWN_MS = 3000;
+  const RELOAD_COOLDOWN_MS = 5000;
 
   let mutationCount = 0;
   let loggedFirstMutation = false;
@@ -20,6 +20,16 @@
 
   const getVideoId = () => new URLSearchParams(location.search).get('v');
 
+  const errorVisible = () => {
+    const reason = document.querySelector('.ytp-error-content-wrap-reason');
+    if (!reason) return false;
+    const text = (reason.textContent || '').trim();
+    if (!text) return false;
+    const overlay = reason.closest('.ytp-error');
+    if (overlay && getComputedStyle(overlay).display === 'none') return false;
+    return true;
+  };
+
   const snapshot = (label) => {
     const reason = document.querySelector('.ytp-error-content-wrap-reason');
     const errorEl = document.querySelector('.ytp-error');
@@ -33,19 +43,9 @@
     });
   };
 
-  const check = () => {
+  const check = async () => {
     if (reloadTriggered) return;
-
-    const reason = document.querySelector('.ytp-error-content-wrap-reason');
-    if (!reason) return;
-
-    const text = (reason.textContent || '').trim();
-    if (!text) return;
-
-    const overlay = reason.closest('.ytp-error');
-    if (overlay && getComputedStyle(overlay).display === 'none') return;
-
-    log('error detected', { text: text.substring(0, 200) });
+    if (!errorVisible()) return;
 
     const videoId = getVideoId();
     if (!videoId) { log('skip: no video id'); return; }
@@ -56,7 +56,16 @@
 
     reloadTriggered = true;
     sessionStorage.setItem(key, String(count + 1));
-    log('reloading video', { videoId, attempt: count + 1 });
+    log('error detected, starting reload sequence', { videoId, attempt: count + 1 });
+
+    try {
+      const res = await chrome.runtime.sendMessage({ type: 'flush-yt-cache' });
+      log('cache flush result', res);
+    } catch (e) {
+      log('cache flush failed', { error: String(e) });
+    }
+
+    log('posting video reload to main world', { videoId });
     window.postMessage({ type: 'yt-autorefresh-reload', videoId }, location.origin);
     setTimeout(() => { reloadTriggered = false; }, RELOAD_COOLDOWN_MS);
   };
