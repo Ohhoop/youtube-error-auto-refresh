@@ -219,6 +219,9 @@
         pointer-events: none !important;
         visibility: hidden !important;
       }
+      video.html5-main-video.yt-ar-ad-hide {
+        visibility: hidden !important;
+      }
     `;
     (document.head || document.documentElement).appendChild(style);
   };
@@ -285,6 +288,10 @@
     return !isNaN(video.duration) && video.duration > 0 && video.duration < AD_DURATION_MAX;
   };
 
+  const isContentDuration = (video) => {
+    return !isNaN(video.duration) && video.duration >= AD_DURATION_MAX;
+  };
+
   let lastForceEndAt = 0;
   const forceEndAd = (video) => {
     const now = Date.now();
@@ -317,8 +324,11 @@
     clickAnySkipButton();
 
     const adShowing = playerEl.classList.contains('ad-showing') || playerEl.classList.contains('ad-interrupting');
+    const shouldFastForward = adShowing && !isContentDuration(video);
 
-    if (adShowing) {
+    if (shouldFastForward) {
+      video.classList.add('yt-ar-ad-hide');
+
       if (isAdDuration(video)) {
         if (video.currentTime < video.duration - 0.5) {
           try { video.currentTime = video.duration - 0.05; } catch (e) {}
@@ -341,6 +351,7 @@
         } catch (e) {}
       }
     } else {
+      video.classList.remove('yt-ar-ad-hide');
       if (originalRate !== null) {
         try { video.playbackRate = originalRate; } catch (e) {}
         originalRate = null;
