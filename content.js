@@ -111,20 +111,21 @@
     } else if (e.data.type === 'yt-autorefresh-success') {
       log('reload succeeded', e.data);
     } else if (e.data.type === 'yt-autorefresh-all-failed') {
-      log('all strategies failed, page reload', e.data);
-      location.reload();
+      log('all strategies failed, giving up (no page reload)', e.data);
     } else if (e.data.type === 'yt-autorefresh-skip-debug') {
       log('skip candidates found', e.data);
     } else if (e.data.type === 'yt-autorefresh-click-debug') {
       log('player click captured', e.data);
     } else if (e.data.type === 'yt-autorefresh-content-started') {
       flushLogs();
+    } else if (e.data.type === 'yt-autorefresh-need-reload') {
+      log('reload requested by main world', e.data);
+      triggerReload(e.data.reason || 'main-world-request');
     }
   });
 
-  const check = async () => {
+  const triggerReload = async (reason) => {
     if (reloadTriggered) return;
-    if (!errorVisible()) return;
 
     const videoId = getVideoId();
     if (!videoId) return;
@@ -132,13 +133,13 @@
     const key = 'yt-refresh-' + videoId;
     const count = parseInt(sessionStorage.getItem(key) || '0', 10);
     if (count >= MAX_REFRESH) {
-      log('skip: max reached', { videoId, count });
+      log('skip: max reached', { videoId, count, reason });
       return;
     }
 
     reloadTriggered = true;
     sessionStorage.setItem(key, String(count + 1));
-    log('error detected', { videoId, attempt: count + 1 });
+    log('triggering reload', { videoId, attempt: count + 1, reason });
 
     let freshConfig = null;
     try {
@@ -153,6 +154,12 @@
       freshConfig
     }, location.origin);
     setTimeout(() => { reloadTriggered = false; }, RELOAD_COOLDOWN_MS);
+  };
+
+  const check = async () => {
+    if (reloadTriggered) return;
+    if (!errorVisible()) return;
+    await triggerReload('error-detected');
   };
 
   new MutationObserver(check).observe(document.body, {

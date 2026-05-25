@@ -237,6 +237,48 @@
     return true;
   };
 
+  let interstitialFirstSeenAt = 0;
+  let lastInterstitialReloadAt = 0;
+  const INTERSTITIAL_STUCK_MS = 1500;
+  const INTERSTITIAL_RELOAD_COOLDOWN_MS = 5000;
+
+  const handlePostAdInterstitial = () => {
+    const playerEl = document.querySelector('.html5-video-player');
+    const video = document.querySelector('video.html5-main-video');
+    if (!playerEl || !video) return;
+
+    const adShowing = playerEl.classList.contains('ad-showing') || playerEl.classList.contains('ad-interrupting');
+    if (adShowing) {
+      interstitialFirstSeenAt = 0;
+      return;
+    }
+
+    const interstitial = document.querySelector('.ytp-video-interstitial-buttoned-centered-layout');
+    if (!interstitial) {
+      interstitialFirstSeenAt = 0;
+      return;
+    }
+
+    const now = Date.now();
+    if (interstitialFirstSeenAt === 0) interstitialFirstSeenAt = now;
+
+    try { interstitial.remove(); } catch (e) {}
+
+    const player = getPlayer();
+    if (player && typeof player.playVideo === 'function') {
+      try { player.playVideo(); } catch (e) {}
+    }
+    if (video.paused && video.readyState >= 2) {
+      try { video.play().catch(() => {}); } catch (e) {}
+    }
+
+    const stuckMs = now - interstitialFirstSeenAt;
+    if (stuckMs > INTERSTITIAL_STUCK_MS && now - lastInterstitialReloadAt > INTERSTITIAL_RELOAD_COOLDOWN_MS) {
+      lastInterstitialReloadAt = now;
+      post('yt-autorefresh-need-reload', { reason: 'post-ad-interstitial-stuck', stuckMs });
+    }
+  };
+
   const AD_DURATION_MAX = 90;
 
   const isAdDuration = (video) => {
@@ -399,6 +441,7 @@
     dismissAntiAdblock();
     dumpSkipCandidates();
     handleAdState();
+    handlePostAdInterstitial();
     patchPause();
     forcePlay();
     unstickVideo();
