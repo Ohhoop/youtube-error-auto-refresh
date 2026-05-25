@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "YouTube Auto-Refresh on Error",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Refreshes the YouTube tab when the player shows a playback error. Capped at 3 attempts per video.",
   "content_scripts": [
     {

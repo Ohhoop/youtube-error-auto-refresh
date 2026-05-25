@@ -3,15 +3,24 @@
 
   const getVideoId = () => new URLSearchParams(location.search).get('v');
 
-  const isVisible = (el) => {
-    if (!el) return false;
-    const style = getComputedStyle(el);
-    return style.display !== 'none' && style.visibility !== 'hidden';
+  const isShown = (el) => {
+    let current = el;
+    while (current && current.nodeType === 1) {
+      const style = getComputedStyle(current);
+      if (style.display === 'none' || style.visibility === 'hidden') return false;
+      current = current.parentElement;
+    }
+    return true;
   };
 
   const check = () => {
-    const errorEl = document.querySelector('.ytp-error');
-    if (!isVisible(errorEl)) return;
+    const reason = document.querySelector('.ytp-error-content-wrap-reason');
+    if (!reason) return;
+
+    const text = (reason.textContent || '').trim();
+    if (!text) return;
+
+    if (!isShown(reason)) return;
 
     const videoId = getVideoId();
     if (!videoId) return;
@@ -26,7 +35,8 @@
 
   new MutationObserver(check).observe(document.body, {
     childList: true,
-    subtree: true
+    subtree: true,
+    characterData: true
   });
 
   check();
