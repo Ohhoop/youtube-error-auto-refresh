@@ -28,6 +28,69 @@
     };
   };
 
+  let originalRate = null;
+  let weMuted = false;
+
+  const handleAdState = () => {
+    const playerEl = document.querySelector('.html5-video-player');
+    const video = document.querySelector('video.html5-main-video');
+    if (!playerEl || !video) return;
+
+    const adShowing = playerEl.classList.contains('ad-showing') || playerEl.classList.contains('ad-interrupting');
+
+    if (adShowing) {
+      const skipBtn = document.querySelector(
+        '.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button, .ytp-ad-skip-button-container button'
+      );
+      if (skipBtn) {
+        try { skipBtn.click(); } catch (e) {}
+      }
+
+      if (!isNaN(video.duration) && video.duration > 0 && video.currentTime < video.duration - 0.5) {
+        try { video.currentTime = video.duration - 0.05; } catch (e) {}
+      }
+
+      if (originalRate === null) originalRate = video.playbackRate || 1;
+      try { video.playbackRate = 16; } catch (e) {}
+
+      if (!video.muted) {
+        try {
+          video.muted = true;
+          weMuted = true;
+        } catch (e) {}
+      }
+    } else {
+      if (originalRate !== null) {
+        try { video.playbackRate = originalRate; } catch (e) {}
+        originalRate = null;
+      }
+      if (weMuted && video.muted) {
+        try {
+          video.muted = false;
+          weMuted = false;
+        } catch (e) {}
+      }
+    }
+  };
+
+  const startAdSkipper = () => {
+    const observer = new MutationObserver(handleAdState);
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['class']
+    });
+    setInterval(handleAdState, 250);
+    handleAdState();
+  };
+
+  if (document.body) {
+    startAdSkipper();
+  } else {
+    document.addEventListener('DOMContentLoaded', startAdSkipper);
+  }
+
   const monitorTransitions = async (durationMs, intervalMs) => {
     const start = Date.now();
     let last = errorVisible();
@@ -71,22 +134,6 @@
         if (typeof player.loadVideoById === 'function') {
           player.loadVideoById({ videoId, startSeconds: 0 });
         }
-      }
-    },
-    {
-      name: 'inject-fresh-config+internal-updateVideoData',
-      available: () => !!freshConfig,
-      run: () => {
-        const player = getPlayer();
-        if (!player || !player.player_) throw new Error('no player_ internal');
-        const candidates = ['updateVideoData', 'setPlayerResponse', 'loadVideoByPlayerVars', 'setVideoData'];
-        for (const name of candidates) {
-          if (typeof player.player_[name] === 'function') {
-            player.player_[name](freshConfig);
-            return;
-          }
-        }
-        throw new Error('no usable internal method found');
       }
     },
     {
