@@ -43,17 +43,55 @@
     return { transitions, finalErrorVisible: last };
   };
 
-  const strategies = [
+  const buildStrategies = (freshConfig) => [
     {
-      name: 'yt-navigate',
+      name: 'inject-fresh-config+loadVideoByPlayerVars',
+      available: () => !!freshConfig,
       run: () => {
+        const player = getPlayer();
         const videoId = getVideoId();
-        const detail = { endpoint: { watchEndpoint: { videoId } } };
-        document.dispatchEvent(new CustomEvent('yt-navigate', { detail, bubbles: true, composed: true }));
+        if (typeof player.loadVideoByPlayerVars === 'function') {
+          player.loadVideoByPlayerVars({
+            video_id: videoId,
+            raw_player_response: freshConfig
+          });
+        } else {
+          throw new Error('loadVideoByPlayerVars not available');
+        }
+      }
+    },
+    {
+      name: 'inject-fresh-config+window+loadVideoById',
+      available: () => !!freshConfig,
+      run: () => {
+        const player = getPlayer();
+        const videoId = getVideoId();
+        try { window.ytInitialPlayerResponse = freshConfig; } catch (e) {}
+        if (typeof player.stopVideo === 'function') player.stopVideo();
+        if (typeof player.loadVideoById === 'function') {
+          player.loadVideoById({ videoId, startSeconds: 0 });
+        }
+      }
+    },
+    {
+      name: 'inject-fresh-config+internal-updateVideoData',
+      available: () => !!freshConfig,
+      run: () => {
+        const player = getPlayer();
+        if (!player || !player.player_) throw new Error('no player_ internal');
+        const candidates = ['updateVideoData', 'setPlayerResponse', 'loadVideoByPlayerVars', 'setVideoData'];
+        for (const name of candidates) {
+          if (typeof player.player_[name] === 'function') {
+            player.player_[name](freshConfig);
+            return;
+          }
+        }
+        throw new Error('no usable internal method found');
       }
     },
     {
       name: 'stopVideo+loadVideoByUrl',
+      available: () => true,
       run: () => {
         const player = getPlayer();
         const videoId = getVideoId();
@@ -64,27 +102,6 @@
             startSeconds: 0
           });
         }
-      }
-    },
-    {
-      name: 'stopVideo+cueVideoById+playVideo',
-      run: async () => {
-        const player = getPlayer();
-        const videoId = getVideoId();
-        if (typeof player.stopVideo === 'function') player.stopVideo();
-        await delay(200);
-        if (typeof player.cueVideoById === 'function') player.cueVideoById(videoId);
-        await delay(300);
-        if (typeof player.playVideo === 'function') player.playVideo();
-      }
-    },
-    {
-      name: 'stopVideo+longWait+playVideo',
-      run: async () => {
-        const player = getPlayer();
-        if (typeof player.stopVideo === 'function') player.stopVideo();
-        await delay(3000);
-        if (typeof player.playVideo === 'function') player.playVideo();
       }
     }
   ];
@@ -99,7 +116,14 @@
       return;
     }
 
+    const freshConfig = e.data.freshConfig || null;
+    const strategies = buildStrategies(freshConfig);
+
     for (const s of strategies) {
+      if (!s.available()) {
+        post('yt-autorefresh-strategy', { name: s.name, phase: 'skipped' });
+        continue;
+      }
       post('yt-autorefresh-strategy', { name: s.name, phase: 'try', stateBefore: playerState() });
       try {
         await s.run();
@@ -107,7 +131,7 @@
         post('yt-autorefresh-strategy', { name: s.name, phase: 'threw', error: String(err) });
         continue;
       }
-      const monitor = await monitorTransitions(3000, 200);
+      const monitor = await monitorTransitions(3500, 200);
       post('yt-autorefresh-strategy', {
         name: s.name,
         phase: 'result',
