@@ -88,6 +88,49 @@
     return rect.width > 0 && rect.height > 0;
   };
 
+  const seenButtonHtml = new Set();
+  let prevAdShowing = false;
+
+  const dumpSkipCandidates = () => {
+    const playerEl = document.querySelector('.html5-video-player');
+    if (!playerEl) return;
+    const adShowing = playerEl.classList.contains('ad-showing') || playerEl.classList.contains('ad-interrupting');
+
+    if (!adShowing && prevAdShowing) {
+      seenButtonHtml.clear();
+    }
+    prevAdShowing = adShowing;
+    if (!adShowing) return;
+
+    const playerRect = playerEl.getBoundingClientRect();
+    const allClickable = document.querySelectorAll('button, a, [role="button"], [tabindex="0"], [onclick]');
+    const newCandidates = [];
+
+    for (const el of allClickable) {
+      if (!isElementVisible(el)) continue;
+      const rect = el.getBoundingClientRect();
+      if (rect.right < playerRect.left || rect.left > playerRect.right) continue;
+      if (rect.bottom < playerRect.top || rect.top > playerRect.bottom) continue;
+
+      const html = el.outerHTML.substring(0, 400);
+      if (seenButtonHtml.has(html)) continue;
+      seenButtonHtml.add(html);
+
+      newCandidates.push({
+        tag: el.tagName,
+        label: (el.getAttribute('aria-label') || '').substring(0, 60),
+        title: (el.getAttribute('title') || '').substring(0, 60),
+        text: (el.textContent || '').trim().substring(0, 60),
+        pos: { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height) },
+        html
+      });
+    }
+
+    if (newCandidates.length > 0) {
+      window.postMessage({ type: 'yt-autorefresh-skip-debug', count: newCandidates.length, candidates: newCandidates }, location.origin);
+    }
+  };
+
   const clickAnySkipButton = () => {
     for (const sel of skipSelectors) {
       const matches = document.querySelectorAll(sel);
@@ -98,20 +141,33 @@
       }
     }
 
-    const playerEl = document.querySelector('.html5-video-player, #movie_player');
-    if (playerEl) {
-      const candidates = playerEl.querySelectorAll('button, [role="button"]');
-      for (const btn of candidates) {
-        const label = (btn.getAttribute('aria-label') || '').trim();
-        const text = (btn.textContent || '').trim();
-        if (!isElementVisible(btn)) continue;
-        if (/^skip(\s|$)/i.test(label) || /^skip(\s|$)/i.test(text)) {
-          try { btn.click(); return true; } catch (e) {}
-        }
+    const candidates = document.querySelectorAll('button, [role="button"]');
+    for (const btn of candidates) {
+      if (!isElementVisible(btn)) continue;
+      const label = (btn.getAttribute('aria-label') || '').trim().toLowerCase();
+      const text = (btn.textContent || '').trim().toLowerCase();
+      if (label === 'skip' || text === 'skip' || label.startsWith('skip ad') || text.startsWith('skip ad') || label.startsWith('skip ')) {
+        try { btn.click(); return true; } catch (e) {}
       }
     }
 
     return false;
+  };
+
+  const forceEndAd = (video) => {
+    const player = getPlayer();
+    if (player) {
+      const methods = ['cancelAdvertisement', 'skipAd', 'skipAdvertisement'];
+      for (const m of methods) {
+        if (typeof player[m] === 'function') {
+          try { player[m](); } catch (e) {}
+        }
+      }
+    }
+    if (!isNaN(video.duration) && video.duration > 0) {
+      try { video.currentTime = video.duration; } catch (e) {}
+      try { video.dispatchEvent(new Event('ended', { bubbles: true })); } catch (e) {}
+    }
   };
 
   const handleAdState = () => {
@@ -124,12 +180,20 @@
     const adShowing = playerEl.classList.contains('ad-showing') || playerEl.classList.contains('ad-interrupting');
 
     if (adShowing) {
-      if (!isNaN(video.duration) && video.duration > 0 && video.currentTime < video.duration - 0.5) {
-        try { video.currentTime = video.duration - 0.05; } catch (e) {}
+      if (!isNaN(video.duration) && video.duration > 0) {
+        if (video.currentTime < video.duration - 0.5) {
+          try { video.currentTime = video.duration - 0.05; } catch (e) {}
+        } else {
+          forceEndAd(video);
+        }
       }
 
       if (originalRate === null) originalRate = video.playbackRate || 1;
       try { video.playbackRate = 16; } catch (e) {}
+
+      if (video.paused && video.readyState >= 2) {
+        try { video.play().catch(() => {}); } catch (e) {}
+      }
 
       if (!video.muted) {
         try {
@@ -213,6 +277,7 @@
 
   const handle = () => {
     dismissAntiAdblock();
+    dumpSkipCandidates();
     handleAdState();
     patchPause();
     forcePlay();

@@ -116,6 +116,9 @@
     } else if (e.data.type === 'yt-autorefresh-all-failed') {
       log('all strategies failed, page reload', e.data);
       flushLogs().finally(() => location.reload());
+    } else if (e.data.type === 'yt-autorefresh-skip-debug') {
+      log('skip candidates found', e.data);
+      flushLogs();
     }
   });
 
@@ -137,20 +140,13 @@
     reloadTriggered = true;
     sessionStorage.setItem(key, String(count + 1));
     log('error detected', { videoId, attempt: count + 1 });
-    await flushLogs();
+    flushLogs();
 
     let freshConfig = null;
     try {
       freshConfig = await fetchFreshPlayerResponse(videoId);
     } catch (e) {
       log('prefetch threw', { error: String(e) });
-    }
-
-    try {
-      const res = await chrome.runtime.sendMessage({ type: 'flush-yt-data' });
-      log('storage flush', res);
-    } catch (e) {
-      log('storage flush failed', { error: String(e) });
     }
 
     window.postMessage({
