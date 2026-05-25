@@ -131,12 +131,48 @@
     }
   };
 
+  const realisticClick = (el) => {
+    const rect = el.getBoundingClientRect();
+    const x = rect.left + rect.width / 2;
+    const y = rect.top + rect.height / 2;
+    const opts = (down) => ({
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      view: window,
+      button: 0,
+      buttons: down ? 1 : 0,
+      clientX: x,
+      clientY: y,
+      screenX: x,
+      screenY: y
+    });
+    try {
+      el.dispatchEvent(new PointerEvent('pointerdown', Object.assign(opts(true), { pointerId: 1, pointerType: 'mouse', isPrimary: true })));
+      el.dispatchEvent(new MouseEvent('mousedown', opts(true)));
+      el.dispatchEvent(new PointerEvent('pointerup', Object.assign(opts(false), { pointerId: 1, pointerType: 'mouse', isPrimary: true })));
+      el.dispatchEvent(new MouseEvent('mouseup', opts(false)));
+      el.dispatchEvent(new MouseEvent('click', opts(false)));
+    } catch (e) {}
+    try { el.click(); } catch (e) {}
+  };
+
+  const extraSkipSelectors = [
+    '[id^="skip-button"]',
+    '[id^="skip-button:"]',
+    '.ytp-skip-ad-button',
+    '.ytp-ad-skip-button-container button'
+  ];
+
   const clickAnySkipButton = () => {
-    for (const sel of skipSelectors) {
-      const matches = document.querySelectorAll(sel);
+    const allSelectors = skipSelectors.concat(extraSkipSelectors);
+    for (const sel of allSelectors) {
+      let matches;
+      try { matches = document.querySelectorAll(sel); } catch (e) { continue; }
       for (const btn of matches) {
         if (isElementVisible(btn)) {
-          try { btn.click(); return true; } catch (e) {}
+          realisticClick(btn);
+          return true;
         }
       }
     }
@@ -147,7 +183,8 @@
       const label = (btn.getAttribute('aria-label') || '').trim().toLowerCase();
       const text = (btn.textContent || '').trim().toLowerCase();
       if (label === 'skip' || text === 'skip' || label.startsWith('skip ad') || text.startsWith('skip ad') || label.startsWith('skip ')) {
-        try { btn.click(); return true; } catch (e) {}
+        realisticClick(btn);
+        return true;
       }
     }
 
