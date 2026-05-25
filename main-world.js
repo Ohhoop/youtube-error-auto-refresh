@@ -65,21 +65,65 @@
   let originalRate = null;
   let weMuted = false;
 
+  const skipSelectors = [
+    '.ytp-ad-skip-button',
+    '.ytp-ad-skip-button-modern',
+    '.ytp-ad-skip-button-modernized',
+    '.ytp-ad-skip-button-clean',
+    '.ytp-skip-ad-button',
+    '.ytp-ad-skip-button-container button',
+    '.ytp-ad-overlay-skip-button',
+    '.ytp-ad-overlay-close-button',
+    '.ytp-image-companion-ad button',
+    '.ytp-action-companion-display button'
+  ];
+
+  const isElementVisible = (el) => {
+    if (!el) return false;
+    if (el.offsetParent === null) {
+      const style = getComputedStyle(el);
+      if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+    }
+    const rect = el.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  };
+
+  const clickAnySkipButton = () => {
+    for (const sel of skipSelectors) {
+      const matches = document.querySelectorAll(sel);
+      for (const btn of matches) {
+        if (isElementVisible(btn)) {
+          try { btn.click(); return true; } catch (e) {}
+        }
+      }
+    }
+
+    const playerEl = document.querySelector('.html5-video-player, #movie_player');
+    if (playerEl) {
+      const candidates = playerEl.querySelectorAll('button, [role="button"]');
+      for (const btn of candidates) {
+        const label = (btn.getAttribute('aria-label') || '').trim();
+        const text = (btn.textContent || '').trim();
+        if (!isElementVisible(btn)) continue;
+        if (/^skip(\s|$)/i.test(label) || /^skip(\s|$)/i.test(text)) {
+          try { btn.click(); return true; } catch (e) {}
+        }
+      }
+    }
+
+    return false;
+  };
+
   const handleAdState = () => {
     const playerEl = document.querySelector('.html5-video-player');
     const video = document.querySelector('video.html5-main-video');
     if (!playerEl || !video) return;
 
+    clickAnySkipButton();
+
     const adShowing = playerEl.classList.contains('ad-showing') || playerEl.classList.contains('ad-interrupting');
 
     if (adShowing) {
-      const skipBtn = document.querySelector(
-        '.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button, .ytp-ad-skip-button-container button'
-      );
-      if (skipBtn) {
-        try { skipBtn.click(); } catch (e) {}
-      }
-
       if (!isNaN(video.duration) && video.duration > 0 && video.currentTime < video.duration - 0.5) {
         try { video.currentTime = video.duration - 0.05; } catch (e) {}
       }
@@ -115,6 +159,45 @@
     }
   };
 
+  let lastVideoTime = 0;
+  let lastStuckCheck = 0;
+
+  const unstickVideo = () => {
+    const video = document.querySelector('video.html5-main-video');
+    const playerEl = document.querySelector('.html5-video-player');
+    if (!video || !playerEl) return;
+
+    if (playerEl.classList.contains('ad-showing') || playerEl.classList.contains('ad-interrupting')) {
+      lastVideoTime = video.currentTime;
+      lastStuckCheck = Date.now();
+      return;
+    }
+
+    if (antiAdblockPresent()) {
+      lastVideoTime = video.currentTime;
+      lastStuckCheck = Date.now();
+      return;
+    }
+
+    if (video.paused || video.readyState < 3) {
+      lastVideoTime = video.currentTime;
+      lastStuckCheck = Date.now();
+      return;
+    }
+
+    const now = Date.now();
+    const elapsed = now - lastStuckCheck;
+    if (elapsed < 600) return;
+
+    const advance = Math.abs(video.currentTime - lastVideoTime);
+    if (advance < 0.05) {
+      try { video.currentTime = video.currentTime + 0.5; } catch (e) {}
+    }
+
+    lastVideoTime = video.currentTime;
+    lastStuckCheck = now;
+  };
+
   let pausePatched = false;
   const patchPause = () => {
     if (pausePatched) return;
@@ -133,6 +216,7 @@
     handleAdState();
     patchPause();
     forcePlay();
+    unstickVideo();
   };
 
   const start = () => {
