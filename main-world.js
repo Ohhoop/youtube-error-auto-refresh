@@ -199,14 +199,33 @@
     return false;
   };
 
+  const injectAdHidingCSS = () => {
+    if (document.querySelector('style[data-yt-autorefresh-styles]')) return;
+    const style = document.createElement('style');
+    style.setAttribute('data-yt-autorefresh-styles', '');
+    style.textContent = `
+      .ytp-video-interstitial-buttoned-centered-layout,
+      .ytp-ad-overlay-image,
+      .ytp-ad-image-overlay,
+      .ytp-ad-player-overlay-layout,
+      .ytp-ad-player-overlay {
+        display: none !important;
+        pointer-events: none !important;
+        visibility: hidden !important;
+      }
+    `;
+    (document.head || document.documentElement).appendChild(style);
+  };
+
   const dismissPostAdInterstitial = () => {
+    injectAdHidingCSS();
     const interstitial = document.querySelector(
       '.ytp-video-interstitial-buttoned-centered-layout, .video-ads.ytp-ad-module > div'
     );
     if (!interstitial) return false;
     try { interstitial.remove(); } catch (e) {}
     const video = document.querySelector('video.html5-main-video');
-    if (video) {
+    if (video && video.paused && video.readyState >= 2) {
       try { video.play().catch(() => {}); } catch (e) {}
     }
     return true;
@@ -375,6 +394,7 @@
   };
 
   const start = () => {
+    injectAdHidingCSS();
     const observer = new MutationObserver(handle);
     observer.observe(document.body, {
       childList: true,
