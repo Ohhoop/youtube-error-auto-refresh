@@ -92,9 +92,12 @@
 
   const stripAds = (config) => {
     const stripped = [];
-    if (config.adPlacements !== undefined) {
-      delete config.adPlacements;
-      stripped.push('adPlacements');
+    const fieldsToDelete = ['adPlacements', 'playerAds', 'adSlots', 'adBreakHeartbeatParams', 'adParams'];
+    for (const field of fieldsToDelete) {
+      if (config[field] !== undefined) {
+        delete config[field];
+        stripped.push(field);
+      }
     }
     config._stripped = stripped;
     return config;
