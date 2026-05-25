@@ -302,6 +302,35 @@
     document.addEventListener('DOMContentLoaded', start);
   }
 
+  document.addEventListener('mousedown', (e) => {
+    const target = e.target;
+    if (!target || !target.getBoundingClientRect) return;
+    const playerEl = document.querySelector('.html5-video-player');
+    if (!playerEl) return;
+    const playerRect = playerEl.getBoundingClientRect();
+    const rect = target.getBoundingClientRect();
+    if (rect.left < playerRect.left - 50 || rect.right > playerRect.right + 50) return;
+    if (rect.top < playerRect.top - 50 || rect.bottom > playerRect.bottom + 100) return;
+
+    const chain = [];
+    let el = target;
+    for (let i = 0; i < 5 && el; i++) {
+      chain.push({
+        tag: el.tagName,
+        cls: (typeof el.className === 'string' ? el.className : ((el.getAttribute && el.getAttribute('class')) || '')).substring(0, 150),
+        id: el.id || '',
+        label: (el.getAttribute && el.getAttribute('aria-label')) || '',
+        text: (el.textContent || '').trim().substring(0, 60)
+      });
+      el = el.parentElement;
+    }
+    window.postMessage({
+      type: 'yt-autorefresh-click-debug',
+      targetHtml: target.outerHTML.substring(0, 600),
+      chain
+    }, location.origin);
+  }, true);
+
   const monitorTransitions = async (durationMs, intervalMs) => {
     const start = Date.now();
     let last = errorVisible();

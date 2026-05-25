@@ -119,6 +119,9 @@
     } else if (e.data.type === 'yt-autorefresh-skip-debug') {
       log('skip candidates found', e.data);
       flushLogs();
+    } else if (e.data.type === 'yt-autorefresh-click-debug') {
+      log('player click captured', e.data);
+      flushLogs();
     }
   });
 
