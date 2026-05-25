@@ -80,9 +80,9 @@
       log('prefetch ok', {
         status,
         hasStreaming: !!sanitized.streamingData,
-        strippedAds: sanitized._strippedAdsCount
+        stripped: sanitized._stripped
       });
-      delete sanitized._strippedAdsCount;
+      delete sanitized._stripped;
       return sanitized;
     } catch (e) {
       log('prefetch parse failed', { error: String(e) });
@@ -91,26 +91,12 @@
   };
 
   const stripAds = (config) => {
-    let count = 0;
-    const adFields = [
-      'playerAds',
-      'adPlacements',
-      'adSlots',
-      'adBreakHeartbeatParams',
-      'adParams',
-      'adSafetyReason'
-    ];
-    for (const field of adFields) {
-      if (config[field] !== undefined) {
-        config[field] = Array.isArray(config[field]) ? [] : {};
-        count++;
-      }
+    const stripped = [];
+    if (config.adPlacements !== undefined) {
+      delete config.adPlacements;
+      stripped.push('adPlacements');
     }
-    if (config.playerConfig && config.playerConfig.adsClientStateParams) {
-      delete config.playerConfig.adsClientStateParams;
-      count++;
-    }
-    config._strippedAdsCount = count;
+    config._stripped = stripped;
     return config;
   };
 
