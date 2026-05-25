@@ -76,12 +76,42 @@
     try {
       const parsed = JSON.parse(jsonStr);
       const status = parsed.playabilityStatus && parsed.playabilityStatus.status;
-      log('prefetch ok', { status, hasStreaming: !!parsed.streamingData });
-      return parsed;
+      const sanitized = stripAds(parsed);
+      log('prefetch ok', {
+        status,
+        hasStreaming: !!sanitized.streamingData,
+        strippedAds: sanitized._strippedAdsCount
+      });
+      delete sanitized._strippedAdsCount;
+      return sanitized;
     } catch (e) {
       log('prefetch parse failed', { error: String(e) });
       return null;
     }
+  };
+
+  const stripAds = (config) => {
+    let count = 0;
+    const adFields = [
+      'playerAds',
+      'adPlacements',
+      'adSlots',
+      'adBreakHeartbeatParams',
+      'adParams',
+      'adSafetyReason'
+    ];
+    for (const field of adFields) {
+      if (config[field] !== undefined) {
+        config[field] = Array.isArray(config[field]) ? [] : {};
+        count++;
+      }
+    }
+    if (config.playerConfig && config.playerConfig.adsClientStateParams) {
+      delete config.playerConfig.adsClientStateParams;
+      count++;
+    }
+    config._strippedAdsCount = count;
+    return config;
   };
 
   window.addEventListener('message', (e) => {
