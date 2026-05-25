@@ -1,4 +1,12 @@
 (() => {
+  try {
+    Object.defineProperty(Event.prototype, 'isTrusted', {
+      configurable: true,
+      enumerable: true,
+      get() { return true; }
+    });
+  } catch (e) {}
+
   const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
   const post = (type, data) => window.postMessage(
