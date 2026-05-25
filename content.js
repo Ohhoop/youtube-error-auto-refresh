@@ -2,8 +2,6 @@
   const TAG = '[YT-AutoRefresh]';
   const MAX_REFRESH = 3;
   const RELOAD_COOLDOWN_MS = 20000;
-  const LOG_FLUSH_INTERVAL_MS = 30000;
-
   let reloadTriggered = false;
   const logBuffer = [];
 
@@ -16,14 +14,14 @@
   };
 
   const flushLogs = async () => {
-    const text = logBuffer.length > 0 ? logBuffer.join('\n') + '\n' : '';
+    if (logBuffer.length === 0) return;
+    const text = logBuffer.join('\n') + '\n';
     logBuffer.length = 0;
     try {
       await chrome.runtime.sendMessage({ type: 'append-and-write', text });
     } catch (e) {}
   };
 
-  setInterval(flushLogs, LOG_FLUSH_INTERVAL_MS);
   window.addEventListener('beforeunload', () => { flushLogs(); });
 
   log('content script loaded', { url: location.href });
@@ -112,15 +110,14 @@
       log('strategy', e.data);
     } else if (e.data.type === 'yt-autorefresh-success') {
       log('reload succeeded', e.data);
-      flushLogs();
     } else if (e.data.type === 'yt-autorefresh-all-failed') {
       log('all strategies failed, page reload', e.data);
-      flushLogs().finally(() => location.reload());
+      location.reload();
     } else if (e.data.type === 'yt-autorefresh-skip-debug') {
       log('skip candidates found', e.data);
-      flushLogs();
     } else if (e.data.type === 'yt-autorefresh-click-debug') {
       log('player click captured', e.data);
+    } else if (e.data.type === 'yt-autorefresh-content-started') {
       flushLogs();
     }
   });
@@ -136,14 +133,12 @@
     const count = parseInt(sessionStorage.getItem(key) || '0', 10);
     if (count >= MAX_REFRESH) {
       log('skip: max reached', { videoId, count });
-      flushLogs();
       return;
     }
 
     reloadTriggered = true;
     sessionStorage.setItem(key, String(count + 1));
     log('error detected', { videoId, attempt: count + 1 });
-    flushLogs();
 
     let freshConfig = null;
     try {

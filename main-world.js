@@ -275,6 +275,29 @@
     pausePatched = true;
   };
 
+  let lastAdShowingForFlush = false;
+  let flushedForVideoId = null;
+
+  const detectContentStart = () => {
+    const playerEl = document.querySelector('.html5-video-player');
+    const video = document.querySelector('video.html5-main-video');
+    if (!playerEl || !video) return;
+
+    const adShowing = playerEl.classList.contains('ad-showing') || playerEl.classList.contains('ad-interrupting');
+    const videoId = new URLSearchParams(location.search).get('v');
+    if (!videoId) return;
+
+    const adJustEnded = lastAdShowingForFlush && !adShowing;
+    const directPlay = !adShowing && !video.paused && video.currentTime > 0.5;
+
+    if ((adJustEnded || directPlay) && flushedForVideoId !== videoId) {
+      flushedForVideoId = videoId;
+      window.postMessage({ type: 'yt-autorefresh-content-started' }, location.origin);
+    }
+
+    lastAdShowingForFlush = adShowing;
+  };
+
   const handle = () => {
     dismissAntiAdblock();
     dumpSkipCandidates();
@@ -282,6 +305,7 @@
     patchPause();
     forcePlay();
     unstickVideo();
+    detectContentStart();
   };
 
   const start = () => {
