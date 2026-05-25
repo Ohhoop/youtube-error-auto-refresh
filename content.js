@@ -1,7 +1,7 @@
 (() => {
   const TAG = '[YT-AutoRefresh]';
   const MAX_REFRESH = 3;
-  const RELOAD_COOLDOWN_MS = 12000;
+  const RELOAD_COOLDOWN_MS = 18000;
   const LOG_FLUSH_INTERVAL_MS = 30000;
 
   let reloadTriggered = false;

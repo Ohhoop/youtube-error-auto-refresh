@@ -28,6 +28,21 @@
     };
   };
 
+  const monitorTransitions = async (durationMs, intervalMs) => {
+    const start = Date.now();
+    let last = errorVisible();
+    const transitions = [{ t: 0, errorVisible: last, state: playerState() }];
+    while (Date.now() - start < durationMs) {
+      await delay(intervalMs);
+      const current = errorVisible();
+      if (current !== last) {
+        transitions.push({ t: Date.now() - start, errorVisible: current, state: playerState() });
+        last = current;
+      }
+    }
+    return { transitions, finalErrorVisible: last };
+  };
+
   const strategies = [
     {
       name: 'yt-navigate',
@@ -62,6 +77,15 @@
         await delay(300);
         if (typeof player.playVideo === 'function') player.playVideo();
       }
+    },
+    {
+      name: 'stopVideo+longWait+playVideo',
+      run: async () => {
+        const player = getPlayer();
+        if (typeof player.stopVideo === 'function') player.stopVideo();
+        await delay(3000);
+        if (typeof player.playVideo === 'function') player.playVideo();
+      }
     }
   ];
 
@@ -76,17 +100,21 @@
     }
 
     for (const s of strategies) {
-      post('yt-autorefresh-strategy', { name: s.name, phase: 'try', state: playerState() });
+      post('yt-autorefresh-strategy', { name: s.name, phase: 'try', stateBefore: playerState() });
       try {
         await s.run();
       } catch (err) {
         post('yt-autorefresh-strategy', { name: s.name, phase: 'threw', error: String(err) });
         continue;
       }
-      await delay(2500);
-      const stillBroken = errorVisible();
-      post('yt-autorefresh-strategy', { name: s.name, phase: 'result', errorVisible: stillBroken, state: playerState() });
-      if (!stillBroken) {
+      const monitor = await monitorTransitions(3000, 200);
+      post('yt-autorefresh-strategy', {
+        name: s.name,
+        phase: 'result',
+        transitions: monitor.transitions,
+        finalErrorVisible: monitor.finalErrorVisible
+      });
+      if (!monitor.finalErrorVisible) {
         post('yt-autorefresh-success', { strategy: s.name });
         return;
       }
