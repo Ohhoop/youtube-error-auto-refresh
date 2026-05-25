@@ -28,6 +28,40 @@
     };
   };
 
+  const antiAdblockSelectors = [
+    'ytd-enforcement-message-view-model',
+    'ytd-popup-container ytd-modal-with-title-and-button-renderer',
+    'tp-yt-paper-dialog[role="dialog"]'
+  ];
+
+  const antiAdblockKeywords = ['ad block', 'adblock', 'adblocker', 'bloqueur de pub', 'bloqueur'];
+
+  const isAntiAdblockElement = (el) => {
+    const text = (el.textContent || '').toLowerCase();
+    return antiAdblockKeywords.some((kw) => text.includes(kw));
+  };
+
+  const antiAdblockPresent = () => {
+    for (const sel of antiAdblockSelectors) {
+      const matches = document.querySelectorAll(sel);
+      for (const el of matches) {
+        if (isAntiAdblockElement(el)) return true;
+      }
+    }
+    return false;
+  };
+
+  const dismissAntiAdblock = () => {
+    for (const sel of antiAdblockSelectors) {
+      const matches = document.querySelectorAll(sel);
+      matches.forEach((el) => {
+        if (isAntiAdblockElement(el)) {
+          try { el.remove(); } catch (e) {}
+        }
+      });
+    }
+  };
+
   let originalRate = null;
   let weMuted = false;
 
@@ -73,22 +107,50 @@
     }
   };
 
-  const startAdSkipper = () => {
-    const observer = new MutationObserver(handleAdState);
+  const forcePlay = () => {
+    const video = document.querySelector('video.html5-main-video');
+    if (!video) return;
+    if (video.paused && antiAdblockPresent() && video.readyState >= 2) {
+      try { video.play().catch(() => {}); } catch (e) {}
+    }
+  };
+
+  let pausePatched = false;
+  const patchPause = () => {
+    if (pausePatched) return;
+    const video = document.querySelector('video.html5-main-video');
+    if (!video) return;
+    const origPause = video.pause.bind(video);
+    video.pause = function () {
+      if (antiAdblockPresent()) return;
+      return origPause();
+    };
+    pausePatched = true;
+  };
+
+  const handle = () => {
+    dismissAntiAdblock();
+    handleAdState();
+    patchPause();
+    forcePlay();
+  };
+
+  const start = () => {
+    const observer = new MutationObserver(handle);
     observer.observe(document.body, {
       childList: true,
       subtree: true,
       attributes: true,
       attributeFilter: ['class']
     });
-    setInterval(handleAdState, 250);
-    handleAdState();
+    setInterval(handle, 250);
+    handle();
   };
 
   if (document.body) {
-    startAdSkipper();
+    start();
   } else {
-    document.addEventListener('DOMContentLoaded', startAdSkipper);
+    document.addEventListener('DOMContentLoaded', start);
   }
 
   const monitorTransitions = async (durationMs, intervalMs) => {
