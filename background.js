@@ -33,7 +33,7 @@ const sendOverlaySignal = (tabId) => {
   try { port.postMessage({ type: 'imminent-reload' }); } catch (e) {}
 };
 
-const maybeReloadTab = (tabId) => {
+const maybeReloadTab = async (tabId) => {
   if (!tabId || tabId < 0) return;
   if (!isWatchUrl(tabUrls.get(tabId))) return;
   const now = Date.now();
@@ -44,6 +44,13 @@ const maybeReloadTab = (tabId) => {
   state.count += 1;
   tabReloadState.set(tabId, state);
   sendOverlaySignal(tabId);
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => { try { sessionStorage.setItem('yt-ar-reloaded', '1'); } catch (e) {} },
+      world: 'MAIN'
+    });
+  } catch (e) {}
   chrome.tabs.reload(tabId, { bypassCache: true });
 };
 
@@ -90,8 +97,9 @@ chrome.webRequest.onHeadersReceived.addListener(
 );
 
 chrome.runtime.onMessage.addListener((msg, sender) => {
+  if (!sender.tab) return;
   if (msg && msg.type === 'flush-and-reload') {
-    maybeReloadTab(sender.tab && sender.tab.id);
+    maybeReloadTab(sender.tab.id);
   }
 });
 

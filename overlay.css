@@ -1,0 +1,17 @@
+html.yt-ar-blocked {
+  background-color: #000 !important;
+}
+html.yt-ar-blocked body {
+  display: none !important;
+}
+html.yt-ar-blocked::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #000;
+  z-index: 2147483647;
+  pointer-events: none;
+}

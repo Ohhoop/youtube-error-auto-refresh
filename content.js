@@ -1,29 +1,16 @@
 (() => {
   const MAX_REFRESH = 3;
   let reloadTriggered = false;
-  let overlay = null;
 
-  const ensureOverlay = () => {
-    if (overlay && overlay.isConnected) return overlay;
-    overlay = document.createElement('div');
-    overlay.id = 'yt-autorefresh-overlay';
-    overlay.style.cssText =
-      'position:fixed;top:0;left:0;width:100vw;height:100vh;' +
-      'background:#000;z-index:2147483647;display:none;pointer-events:none;';
-    (document.body || document.documentElement).appendChild(overlay);
-    return overlay;
-  };
-
-  const showOverlay = () => {
-    const o = ensureOverlay();
-    o.style.display = 'block';
+  const sendBlock = () => {
+    try { window.postMessage({ source: 'yt-ar-content', type: 'show-overlay' }, location.origin); } catch (e) {}
   };
 
   const keepBackgroundAlive = () => {
     try {
       const port = chrome.runtime.connect({ name: 'yt-autorefresh-keepalive' });
       port.onMessage.addListener((msg) => {
-        if (msg && msg.type === 'imminent-reload') showOverlay();
+        if (msg && msg.type === 'imminent-reload') sendBlock();
       });
       port.onDisconnect.addListener(() => {
         setTimeout(keepBackgroundAlive, 100);
@@ -48,14 +35,17 @@
     if (count >= MAX_REFRESH) return;
     reloadTriggered = true;
     sessionStorage.setItem(key, String(count + 1));
-    showOverlay();
+    try { sessionStorage.setItem('yt-ar-reloaded', '1'); } catch (e) {}
+    sendBlock();
     chrome.runtime.sendMessage({ type: 'flush-and-reload' }).catch(() => location.reload());
   };
 
   window.addEventListener('message', (e) => {
     if (e.source !== window || e.origin !== location.origin) return;
     if (!e.data || e.data.source !== 'yt-ar-main') return;
-    triggerReload();
+    if (e.data.type === 'player-400' || e.data.type === 'player-error') {
+      triggerReload();
+    }
   });
 
   const domTrigger = () => {
