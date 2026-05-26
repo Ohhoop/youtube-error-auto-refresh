@@ -7,6 +7,25 @@ const MULTI_403_THRESHOLD = 3;
 const tabReloadState = new Map();
 const activePortsByTab = new Map();
 const videoplayback403History = new Map();
+const tabUrls = new Map();
+
+const isWatchUrl = (url) => {
+  if (!url) return false;
+  try {
+    const u = new URL(url);
+    return (u.hostname === 'www.youtube.com' || u.hostname === 'm.youtube.com') &&
+           u.pathname === '/watch' && u.searchParams.has('v');
+  } catch (e) {
+    return false;
+  }
+};
+
+chrome.tabs.query({}, (tabs) => {
+  if (chrome.runtime.lastError) return;
+  for (const t of tabs) {
+    if (t.id !== undefined && t.url) tabUrls.set(t.id, t.url);
+  }
+});
 
 const sendOverlaySignal = (tabId) => {
   const port = activePortsByTab.get(tabId);
@@ -16,6 +35,7 @@ const sendOverlaySignal = (tabId) => {
 
 const maybeReloadTab = (tabId) => {
   if (!tabId || tabId < 0) return;
+  if (!isWatchUrl(tabUrls.get(tabId))) return;
   const now = Date.now();
   const state = tabReloadState.get(tabId) || { lastReload: 0, count: 0 };
   if (now - state.lastReload < RELOAD_DEDUP_MS) return;
@@ -29,6 +49,7 @@ const maybeReloadTab = (tabId) => {
 
 chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   if (changeInfo.url) {
+    tabUrls.set(tabId, changeInfo.url);
     tabReloadState.delete(tabId);
     videoplayback403History.delete(tabId);
   }
@@ -38,6 +59,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   tabReloadState.delete(tabId);
   activePortsByTab.delete(tabId);
   videoplayback403History.delete(tabId);
+  tabUrls.delete(tabId);
 });
 
 chrome.webRequest.onHeadersReceived.addListener(
@@ -52,6 +74,7 @@ chrome.webRequest.onHeadersReceived.addListener(
     if (details.statusCode !== 403) return;
     const tabId = details.tabId;
     if (!tabId || tabId < 0) return;
+    if (!isWatchUrl(tabUrls.get(tabId))) return;
     const now = Date.now();
     let history = videoplayback403History.get(tabId) || [];
     history = history.filter((t) => now - t < MULTI_403_WINDOW_MS);

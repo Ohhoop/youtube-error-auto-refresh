@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "YouTube Auto-Refresh on Error",
-  "version": "1.0.25",
+  "version": "1.0.26",
   "description": "Detects YouTube playback errors and triggers a fast page reload with cache bypass. Capped at 3 attempts per video.",
   "permissions": ["webRequest"],
   "host_permissions": [

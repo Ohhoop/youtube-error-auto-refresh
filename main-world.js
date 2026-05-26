@@ -3,6 +3,9 @@
     try { window.postMessage({ source: 'yt-ar-main', type }, location.origin); } catch (e) {}
   };
 
+  const isWatchPage = () =>
+    location.pathname === '/watch' && !!new URLSearchParams(location.search).get('v');
+
   const origFetch = window.fetch;
   if (origFetch) {
     window.fetch = function (input) {
@@ -11,7 +14,7 @@
         promise.then((response) => {
           try {
             const url = typeof input === 'string' ? input : (input && input.url) || '';
-            if (url.indexOf('/youtubei/v1/player') !== -1 && response.status === 400) {
+            if (url.indexOf('/youtubei/v1/player') !== -1 && response.status === 400 && isWatchPage()) {
               SIGNAL('player-400');
             }
           } catch (e) {}
@@ -32,7 +35,7 @@
       this.addEventListener('load', () => {
         try {
           const url = this.__yt_ar_url || '';
-          if (url.indexOf('/youtubei/v1/player') !== -1 && this.status === 400) {
+          if (url.indexOf('/youtubei/v1/player') !== -1 && this.status === 400 && isWatchPage()) {
             SIGNAL('player-400');
           }
         } catch (e) {}
@@ -42,6 +45,10 @@
   };
 
   const hookPlayer = () => {
+    if (!isWatchPage()) {
+      setTimeout(hookPlayer, 500);
+      return;
+    }
     const player = document.getElementById('movie_player');
     if (!player || typeof player.addEventListener !== 'function') {
       setTimeout(hookPlayer, 200);
