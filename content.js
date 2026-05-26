@@ -1,68 +1,35 @@
 (() => {
-  const TAG = '[YT-AutoRefresh]';
   const MAX_REFRESH = 3;
-  const logBuffer = [];
+  let reloadTriggered = false;
 
-  const log = (msg, data) => {
-    const line = data !== undefined
-      ? `${new Date().toISOString()} ${msg} ${JSON.stringify(data)}`
-      : `${new Date().toISOString()} ${msg}`;
-    console.log(TAG, msg, data === undefined ? '' : data);
-    logBuffer.push(line);
-  };
-
-  const flushLogs = async () => {
-    if (logBuffer.length === 0) return;
-    const text = logBuffer.join('\n') + '\n';
-    logBuffer.length = 0;
+  const keepBackgroundAlive = () => {
     try {
-      await chrome.runtime.sendMessage({ type: 'append-and-write', text });
-    } catch (e) {}
+      const port = chrome.runtime.connect({ name: 'yt-autorefresh-keepalive' });
+      port.onDisconnect.addListener(() => {
+        setTimeout(keepBackgroundAlive, 100);
+      });
+    } catch (e) {
+      setTimeout(keepBackgroundAlive, 1000);
+    }
   };
-
-  window.addEventListener('beforeunload', () => { flushLogs(); });
-
-  log('content script loaded', { url: location.href });
-
-  const getVideoId = () => new URLSearchParams(location.search).get('v');
+  keepBackgroundAlive();
 
   const errorVisible = () => {
     const reason = document.querySelector('.ytp-error-content-wrap-reason');
-    if (!reason) return false;
-    const text = (reason.textContent || '').trim();
-    if (!text) return false;
-    const overlay = reason.closest('.ytp-error');
-    if (overlay && getComputedStyle(overlay).display === 'none') return false;
-    return true;
+    return !!reason && !!(reason.textContent || '').trim();
   };
-
-  let reloadTriggered = false;
 
   const triggerReload = () => {
     if (reloadTriggered) return;
     if (!errorVisible()) return;
-
-    const videoId = getVideoId();
+    const videoId = new URLSearchParams(location.search).get('v');
     if (!videoId) return;
-
     const key = 'yt-refresh-' + videoId;
     const count = parseInt(sessionStorage.getItem(key) || '0', 10);
-    if (count >= MAX_REFRESH) {
-      log('skip: max reached', { videoId, count });
-      flushLogs();
-      return;
-    }
-
+    if (count >= MAX_REFRESH) return;
     reloadTriggered = true;
     sessionStorage.setItem(key, String(count + 1));
-    log('error detected, page reload (bypassCache)', { videoId, attempt: count + 1 });
-
-    flushLogs();
-    try {
-      chrome.runtime.sendMessage({ type: 'flush-and-reload' }).catch(() => location.reload());
-    } catch (e) {
-      location.reload();
-    }
+    chrome.runtime.sendMessage({ type: 'flush-and-reload' }).catch(() => location.reload());
   };
 
   new MutationObserver(triggerReload).observe(document.body || document.documentElement, {
