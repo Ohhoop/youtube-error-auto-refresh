@@ -1,7 +1,6 @@
 (() => {
-  const SIGNAL = (type) => {
-    try { window.postMessage({ source: 'yt-ar-main', type }, location.origin); } catch (e) {}
-  };
+  const C = self.YT_AR_REFRESH;
+  const UNBLOCK_DELAY_MS = 1000;
 
   const isWatchPage = () =>
     location.pathname === '/watch' && !!new URLSearchParams(location.search).get('v');
@@ -16,13 +15,12 @@
     }
   };
 
-  const UNBLOCK_DELAY_MS = 1000;
   let unblockTimer = null;
   let skipUnblockDelay = false;
 
   try {
-    if (sessionStorage.getItem('yt-ar-reloaded') === '1') {
-      sessionStorage.removeItem('yt-ar-reloaded');
+    if (sessionStorage.getItem(C.STORAGE_RELOADED) === '1') {
+      sessionStorage.removeItem(C.STORAGE_RELOADED);
       skipUnblockDelay = true;
     }
   } catch (e) {}
@@ -37,20 +35,29 @@
   const block = () => {
     cancelUnblockTimer();
     const el = document.documentElement;
-    if (el) el.classList.add('yt-ar-blocked');
+    if (el) el.classList.add(C.OVERLAY_CLASS);
   };
 
   const unblock = () => {
     const el = document.documentElement;
-    if (el) el.classList.remove('yt-ar-blocked');
+    if (el) el.classList.remove(C.OVERLAY_CLASS);
     try { window.dispatchEvent(new Event('resize')); } catch (e) {}
+  };
+
+  const scheduleUnblock = () => {
+    if (unblockTimer !== null) return;
+    const delay = skipUnblockDelay ? 0 : UNBLOCK_DELAY_MS;
+    unblockTimer = setTimeout(() => {
+      unblockTimer = null;
+      unblock();
+    }, delay);
   };
 
   if (isWatchPage()) block();
 
   window.addEventListener('message', (e) => {
     if (e.source !== window || e.origin !== location.origin) return;
-    if (e.data && e.data.source === 'yt-ar-content' && e.data.type === 'show-overlay') {
+    if (e.data && e.data.source === C.SOURCE_CONTENT && e.data.type === C.MSG_SHOW_OVERLAY) {
       block();
     }
   });
@@ -79,23 +86,10 @@
     }
     if (player.__yt_ar_hooked) return;
 
-    const tryUnblock = () => {
-      unblock();
-    };
-
-    const scheduleUnblock = () => {
-      if (unblockTimer !== null) return;
-      const delay = skipUnblockDelay ? 0 : UNBLOCK_DELAY_MS;
-      unblockTimer = setTimeout(() => {
-        unblockTimer = null;
-        tryUnblock();
-      }, delay);
-    };
-
     try {
       player.addEventListener('onError', () => {
         block();
-        SIGNAL('player-error');
+        try { window.postMessage({ source: C.SOURCE_MAIN, type: C.MSG_PLAYER_ERROR }, location.origin); } catch (e) {}
       });
       player.addEventListener('onStateChange', (state) => {
         if (state !== -1) {
@@ -113,7 +107,6 @@
   hookPlayer();
 
   const onNavigate = () => {
-    SIGNAL('navigated');
     if (isWatchPage()) {
       block();
       hookPlayer();
@@ -123,57 +116,15 @@
     }
   };
 
-  const origPushState = history.pushState;
-  history.pushState = function () {
-    const result = origPushState.apply(this, arguments);
-    onNavigate();
-    return result;
-  };
-  const origReplaceState = history.replaceState;
-  history.replaceState = function () {
-    const result = origReplaceState.apply(this, arguments);
-    onNavigate();
-    return result;
-  };
-  window.addEventListener('popstate', onNavigate);
-
-  const origFetch = window.fetch;
-  if (origFetch) {
-    window.fetch = function (input) {
-      const promise = origFetch.apply(this, arguments);
-      try {
-        promise.then((response) => {
-          try {
-            const url = typeof input === 'string' ? input : (input && input.url) || '';
-            if (url.indexOf('/youtubei/v1/player') !== -1 && response.status === 400 && isWatchPage()) {
-              block();
-              SIGNAL('player-400');
-            }
-          } catch (e) {}
-        }).catch(() => {});
-      } catch (e) {}
-      return promise;
+  const wrapHistoryMethod = (name) => {
+    const orig = history[name];
+    history[name] = function () {
+      const result = orig.apply(this, arguments);
+      onNavigate();
+      return result;
     };
-  }
-
-  const origOpen = XMLHttpRequest.prototype.open;
-  XMLHttpRequest.prototype.open = function (method, url) {
-    try { this.__yt_ar_url = url; } catch (e) {}
-    return origOpen.apply(this, arguments);
   };
-  const origSend = XMLHttpRequest.prototype.send;
-  XMLHttpRequest.prototype.send = function () {
-    try {
-      this.addEventListener('load', () => {
-        try {
-          const url = this.__yt_ar_url || '';
-          if (url.indexOf('/youtubei/v1/player') !== -1 && this.status === 400 && isWatchPage()) {
-            block();
-            SIGNAL('player-400');
-          }
-        } catch (e) {}
-      });
-    } catch (e) {}
-    return origSend.apply(this, arguments);
-  };
+  wrapHistoryMethod('pushState');
+  wrapHistoryMethod('replaceState');
+  window.addEventListener('popstate', onNavigate);
 })();

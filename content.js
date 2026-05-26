@@ -1,16 +1,35 @@
 (() => {
+  const C = self.YT_AR_REFRESH;
   const MAX_REFRESH = 3;
   let reloadTriggered = false;
 
+  const isWatchPage = () =>
+    location.pathname === '/watch' && !!new URLSearchParams(location.search).get('v');
+
   const sendBlock = () => {
-    try { window.postMessage({ source: 'yt-ar-content', type: 'show-overlay' }, location.origin); } catch (e) {}
+    try { window.postMessage({ source: C.SOURCE_CONTENT, type: C.MSG_SHOW_OVERLAY }, location.origin); } catch (e) {}
+  };
+
+  const triggerReload = () => {
+    if (reloadTriggered) return;
+    if (!isWatchPage()) return;
+    const videoId = new URLSearchParams(location.search).get('v');
+    if (!videoId) return;
+    const key = C.STORAGE_REFRESH_PREFIX + videoId;
+    const count = parseInt(sessionStorage.getItem(key) || '0', 10);
+    if (count >= MAX_REFRESH) return;
+    reloadTriggered = true;
+    sessionStorage.setItem(key, String(count + 1));
+    try { sessionStorage.setItem(C.STORAGE_RELOADED, '1'); } catch (e) {}
+    sendBlock();
+    chrome.runtime.sendMessage({ type: C.MSG_DO_RELOAD }).catch(() => location.reload());
   };
 
   const keepBackgroundAlive = () => {
     try {
-      const port = chrome.runtime.connect({ name: 'yt-autorefresh-keepalive' });
+      const port = chrome.runtime.connect({ name: C.PORT_NAME });
       port.onMessage.addListener((msg) => {
-        if (msg && msg.type === 'imminent-reload') sendBlock();
+        if (msg && msg.type === C.MSG_RELOAD_REQUEST) triggerReload();
       });
       port.onDisconnect.addListener(() => {
         setTimeout(keepBackgroundAlive, 100);
@@ -21,41 +40,9 @@
   };
   keepBackgroundAlive();
 
-  const errorVisible = () => {
-    const reason = document.querySelector('.ytp-error-content-wrap-reason');
-    return !!reason && !!(reason.textContent || '').trim();
-  };
-
-  const triggerReload = () => {
-    if (reloadTriggered) return;
-    const videoId = new URLSearchParams(location.search).get('v');
-    if (!videoId) return;
-    const key = 'yt-refresh-' + videoId;
-    const count = parseInt(sessionStorage.getItem(key) || '0', 10);
-    if (count >= MAX_REFRESH) return;
-    reloadTriggered = true;
-    sessionStorage.setItem(key, String(count + 1));
-    try { sessionStorage.setItem('yt-ar-reloaded', '1'); } catch (e) {}
-    sendBlock();
-    chrome.runtime.sendMessage({ type: 'flush-and-reload' }).catch(() => location.reload());
-  };
-
   window.addEventListener('message', (e) => {
     if (e.source !== window || e.origin !== location.origin) return;
-    if (!e.data || e.data.source !== 'yt-ar-main') return;
-    if (e.data.type === 'player-400' || e.data.type === 'player-error') {
-      triggerReload();
-    }
+    if (!e.data || e.data.source !== C.SOURCE_MAIN) return;
+    if (e.data.type === C.MSG_PLAYER_ERROR) triggerReload();
   });
-
-  const domTrigger = () => {
-    if (errorVisible()) triggerReload();
-  };
-
-  new MutationObserver(domTrigger).observe(document.body || document.documentElement, {
-    childList: true,
-    subtree: true
-  });
-
-  domTrigger();
 })();
