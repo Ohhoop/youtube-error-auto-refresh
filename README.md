@@ -1,17 +1,22 @@
 # YouTube Auto-Refresh on Error
 
-Temporary workaround for a uBlock Origin issue on YouTube. When the player shows a playback error, the extension reloads the page automatically. Capped at 3 reloads per video to avoid infinite loops.
+Workaround for YouTube playback errors caused by ad-blocker interactions. When YouTube shows an "An error occurred. Please try again later" message, the extension automatically reloads the page with cache bypass. Capped at 3 reloads per video to avoid infinite loops.
 
 ## How it works
 
-A content script watches the YouTube DOM with a `MutationObserver`. When the `.ytp-error` overlay becomes visible, it increments a per-video counter in `sessionStorage` and calls `location.reload()`. The observer keeps running when the tab is in the background, so it triggers even if YouTube is not the active tab.
+Two detection paths run in parallel:
+
+1. **Network path (fastest)**: the background service worker listens for `HTTP 400` responses on `youtubei/v1/player` via `webRequest.onHeadersReceived` and triggers the reload immediately when the response headers arrive, before YouTube renders its error overlay.
+2. **DOM path (fallback)**: a content-script `MutationObserver` watches for the `.ytp-error-content-wrap-reason` element appearing in the DOM and posts a reload request to the service worker.
+
+The reload itself is `chrome.tabs.reload(tabId, { bypassCache: true })` so YouTube's JavaScript is fetched fresh from the server. A persistent port from the content script keeps the service worker awake so the network trigger fires without a cold-start delay. Both paths share a per-tab dedup window and a 3-reload cap that resets when the tab navigates to a new URL.
 
 ## Install (Opera GX / Chrome / Edge)
 
-Direct download: [youtube-error-auto-refresh-1.0.23.crx](https://github.com/Ohhoop/youtube-error-auto-refresh/releases/download/v1.0.23/youtube-error-auto-refresh-1.0.23.crx)
+Direct download: [youtube-error-auto-refresh.crx](https://github.com/Ohhoop/youtube-error-auto-refresh/releases/latest/download/youtube-error-auto-refresh.crx)
 
 1. Download the `.crx` file from the link above.
-2. Open `opera://extensions` (or `chrome://extensions`).
+2. Open `opera://extensions` (or `chrome://extensions`, `edge://extensions`).
 3. Enable Developer Mode.
 4. Drag and drop the `.crx` file into the page.
 
@@ -19,14 +24,21 @@ Alternatively, load the unpacked source: clone the repo, then click "Load unpack
 
 ## Configuration
 
-The refresh cap is set in `content.js`:
+The refresh cap is set in `content.js` and `background.js`:
 
 ```js
-const MAX_REFRESH = 3;
+const MAX_REFRESH = 3;        // content.js, per video
+const MAX_RELOADS_PER_TAB = 3; // background.js, per tab
 ```
 
 ## Build
 
+Pack the `Unpacked/` folder with any Chromium browser. Example with Edge:
+
 ```powershell
-Compress-Archive -Path manifest.json,content.js -DestinationPath youtube-error-auto-refresh-1.0.0.zip -Force
+& "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" `
+  --pack-extension="D:\path\to\Unpacked" `
+  --pack-extension-key="D:\path\to\youtube-error-auto-refresh.pem"
 ```
+
+The output `.crx` lands next to `Unpacked/`. Sign with the existing `.pem` key (kept outside the repo) so the extension ID stays stable across releases.
