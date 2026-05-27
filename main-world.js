@@ -1,6 +1,6 @@
 (() => {
   const C = self.YT_AR_REFRESH;
-  const UNBLOCK_DELAY_MS = 1000;
+  const UNBLOCK_DELAY_MS = 2500;
 
   const isWatchPage = () =>
     location.pathname === '/watch' && !!new URLSearchParams(location.search).get('v');
@@ -32,12 +32,6 @@
     }
   };
 
-  const block = () => {
-    cancelUnblockTimer();
-    const el = document.documentElement;
-    if (el) el.classList.add(C.OVERLAY_CLASS);
-  };
-
   const unblock = () => {
     const el = document.documentElement;
     if (el) el.classList.remove(C.OVERLAY_CLASS);
@@ -51,6 +45,12 @@
       unblockTimer = null;
       unblock();
     }, delay);
+  };
+
+  const block = () => {
+    cancelUnblockTimer();
+    const el = document.documentElement;
+    if (el) el.classList.add(C.OVERLAY_CLASS);
   };
 
   if (isWatchPage()) block();
@@ -100,10 +100,36 @@
       });
       player.__yt_ar_hooked = true;
       scheduleUnblock();
+      hookVideoElement(player);
     } catch (e) {
       hookRetryId = setTimeout(hookPlayer, 1000);
     }
   };
+
+  let videoHookRetryId = null;
+  const hookVideoElement = (player) => {
+    if (videoHookRetryId) {
+      clearTimeout(videoHookRetryId);
+      videoHookRetryId = null;
+    }
+    const video = player.querySelector('video');
+    if (!video) {
+      videoHookRetryId = setTimeout(() => hookVideoElement(player), 100);
+      return;
+    }
+    if (video.__yt_ar_hooked) return;
+    const onVideoActive = () => {
+      cancelUnblockTimer();
+      unblock();
+    };
+    video.addEventListener('playing', onVideoActive);
+    video.addEventListener('timeupdate', () => {
+      if (video.currentTime > 0) onVideoActive();
+    });
+    video.__yt_ar_hooked = true;
+    if (video.readyState >= 3 && !video.paused) onVideoActive();
+  };
+
   hookPlayer();
 
   const onNavigate = () => {
@@ -127,4 +153,23 @@
   wrapHistoryMethod('pushState');
   wrapHistoryMethod('replaceState');
   window.addEventListener('popstate', onNavigate);
+
+  const origFetch = window.fetch;
+  if (origFetch) {
+    window.fetch = function (input) {
+      const promise = origFetch.apply(this, arguments);
+      try {
+        promise.then((response) => {
+          try {
+            const url = typeof input === 'string' ? input : (input && input.url) || '';
+            if (url.indexOf('/youtubei/v1/player') !== -1 && response.status === 400 && isWatchPage()) {
+              block();
+              try { window.postMessage({ source: C.SOURCE_MAIN, type: C.MSG_PLAYER_400 }, location.origin); } catch (e) {}
+            }
+          } catch (e) {}
+        }).catch(() => {});
+      } catch (e) {}
+      return promise;
+    };
+  }
 })();
