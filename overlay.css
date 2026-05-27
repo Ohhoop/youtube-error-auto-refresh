@@ -1,17 +1,26 @@
-html.yt-ar-blocked {
-  background-color: #000 !important;
+.html5-video-player.yt-ar-error {
+  background: #000 !important;
+  position: relative !important;
 }
-html.yt-ar-blocked body {
-  display: none !important;
+.html5-video-player.yt-ar-error > * {
+  visibility: hidden !important;
 }
-html.yt-ar-blocked::before {
+.html5-video-player.yt-ar-error::after {
   content: '';
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: #000;
-  z-index: 2147483647;
+  visibility: visible;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 64px;
+  height: 64px;
+  margin: -32px 0 0 -32px;
+  border: 6px solid transparent;
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: yt-ar-spin 1s linear infinite;
+  z-index: 9999;
   pointer-events: none;
+}
+@keyframes yt-ar-spin {
+  to { transform: rotate(360deg); }
 }
